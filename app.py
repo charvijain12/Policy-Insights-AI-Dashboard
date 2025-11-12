@@ -2,37 +2,32 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import os
-from dotenv import load_dotenv
+import base64
 from datetime import datetime
+from dotenv import load_dotenv
 from groq import Groq
 import PyPDF2
 
-# Load API key
+# --- Load API Key ---
 load_dotenv()
 groq_api_key = os.getenv("GROQ_API_KEY")
-
-# Initialize Groq client
 client = Groq(api_key=groq_api_key)
 
-# CSV for storing queries
+# --- File Setup ---
 QUERY_FILE = "queries.csv"
+POLICY_DIR = "policies"
+os.makedirs(POLICY_DIR, exist_ok=True)
+
 if not os.path.exists(QUERY_FILE):
-    pd.DataFrame(columns=["timestamp", "question", "answer"]).to_csv(QUERY_FILE, index=False)
+    pd.DataFrame(columns=["timestamp", "policy", "question", "answer"]).to_csv(QUERY_FILE, index=False)
 
-# Streamlit setup
-st.set_page_config(page_title="Policy Insights AI Dashboard", layout="wide", page_icon="🧠")
-
-# Sidebar Navigation
-st.sidebar.title("🧭 Dashboard Navigation")
-page = st.sidebar.radio(
-    "Choose a tab:",
-    ["💬 Chat & Upload", "📊 Analytics", "🔥 Policy Summary", "💡 Insights & Recommendations", "📞 Contacts"]
-)
+# --- Streamlit Page Config ---
+st.set_page_config(page_title="Policy Insights Dashboard", page_icon="🏢", layout="wide")
 
 # --- Helper Functions ---
-def save_query(question, answer):
+def save_query(policy, question, answer):
     df = pd.read_csv(QUERY_FILE)
-    new_row = pd.DataFrame([[datetime.now(), question, answer]], columns=["timestamp", "question", "answer"])
+    new_row = pd.DataFrame([[datetime.now(), policy, question, answer]], columns=["timestamp", "policy", "question", "answer"])
     df = pd.concat([df, new_row], ignore_index=True)
     df.to_csv(QUERY_FILE, index=False)
 
@@ -40,12 +35,11 @@ def load_queries():
     return pd.read_csv(QUERY_FILE)
 
 def ask_ai(prompt):
-    """Use Groq free model for responses"""
     try:
         response = client.chat.completions.create(
-            model="llama-3.1-8b-instant",  # Groq’s free & fast model
+            model="llama-3.1-8b-instant",
             messages=[
-                {"role": "system", "content": "You are a helpful and knowledgeable HR policy assistant."},
+                {"role": "system", "content": "You are an HR policy assistant that helps employees understand company policies clearly and politely."},
                 {"role": "user", "content": prompt}
             ],
             temperature=0.3,
@@ -54,110 +48,120 @@ def ask_ai(prompt):
     except Exception as e:
         return f"⚠️ Error: {str(e)}"
 
-# --- TAB 1: Chat & Upload ---
-if page == "💬 Chat & Upload":
-    st.title("💬 Policy Chat Assistant")
-    st.write("Upload a company policy document (PDF or TXT) and ask HR or compliance-related questions.")
+def display_pdf_download_button(file_path, label):
+    with open(file_path, "rb") as f:
+        b64 = base64.b64encode(f.read()).decode()
+        href = f'<a href="data:application/octet-stream;base64,{b64}" download="{os.path.basename(file_path)}">📥 {label}</a>'
+        st.markdown(href, unsafe_allow_html=True)
 
-    uploaded_file = st.file_uploader("📄 Upload Policy Document", type=["txt", "pdf"])
-    policy_text = ""
+# --- Sidebar Navigation ---
+st.sidebar.title("🏢 Policy Insights AI Dashboard")
+st.sidebar.caption("For Employees")
 
+page = st.sidebar.radio(
+    "Navigate:",
+    ["📚 All Policies", "📤 Upload or Choose Policy", "💬 Ask Policy AI", "📊 My Analytics", "❓ My FAQs", "🎨 Settings"]
+)
+
+# --- KPI Cards (Top) ---
+def kpi_cards():
+    st.markdown("### 📈 Dashboard Overview")
+    df = load_queries()
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Total Questions Asked", len(df))
+    unique_policies = len(df["policy"].unique()) if not df.empty else 0
+    col2.metric("Policies Referenced", unique_policies)
+    col3.metric("Last Query", df['timestamp'].max() if not df.empty else "—")
+
+# --- TAB 1: All Policies ---
+if page == "📚 All Policies":
+    st.title("📚 All Company Policies")
+    st.write("View and download the latest company policies below:")
+
+    if not os.listdir(POLICY_DIR):
+        st.info("No policy files found. Please upload some first.")
+    else:
+        for file in os.listdir(POLICY_DIR):
+            if file.endswith(".pdf"):
+                st.write(f"📄 **{file.replace('_', ' ').title()}**")
+                display_pdf_download_button(os.path.join(POLICY_DIR, file), "Download Policy")
+
+# --- TAB 2: Upload or Choose Policy ---
+elif page == "📤 Upload or Choose Policy":
+    st.title("📤 Upload or Choose Policy")
+    st.write("Upload a new policy or pick one from the knowledge base below.")
+
+    uploaded_file = st.file_uploader("Upload new policy PDF", type=["pdf"])
     if uploaded_file:
-        if uploaded_file.type == "application/pdf":
-            reader = PyPDF2.PdfReader(uploaded_file)
-            policy_text = "\n".join(page.extract_text() for page in reader.pages if page.extract_text())
-        else:
-            policy_text = uploaded_file.read().decode("utf-8")
-        st.success("✅ Document uploaded successfully!")
+        save_path = os.path.join(POLICY_DIR, uploaded_file.name)
+        with open(save_path, "wb") as f:
+            f.write(uploaded_file.getbuffer())
+        st.success(f"✅ Policy '{uploaded_file.name}' uploaded successfully!")
 
-    question = st.text_input("Ask a policy-related question:")
-    if st.button("Ask"):
-        if uploaded_file and question.strip():
-            with st.spinner("Thinking..."):
-                answer = ask_ai(f"Policy Document:\n{policy_text[:4000]}\n\nQuestion:\n{question}")
-                st.markdown(f"**Answer:** {answer}")
-                save_query(question, answer)
-        elif not uploaded_file:
-            st.warning("Please upload a policy document first.")
-        else:
-            st.warning("Please enter a question.")
+    st.subheader("📚 Choose from Existing Policies:")
+    files = [f for f in os.listdir(POLICY_DIR) if f.endswith(".pdf")]
+    if files:
+        selected_policy = st.selectbox("Select a Policy", files)
+        st.info(f"You selected: **{selected_policy}**")
+    else:
+        st.warning("No policies found yet. Upload one above.")
 
-# --- TAB 2: Analytics ---
-elif page == "📊 Analytics":
-    st.title("📊 Policy Query Analytics")
+# --- TAB 3: Ask Policy AI ---
+elif page == "💬 Ask Policy AI":
+    st.title("💬 Ask a Question About a Policy")
+    files = [f for f in os.listdir(POLICY_DIR) if f.endswith(".pdf")]
+    selected_policy = st.selectbox("Select Policy Document", files if files else ["(No files available)"])
 
+    if selected_policy and selected_policy != "(No files available)":
+        path = os.path.join(POLICY_DIR, selected_policy)
+        reader = PyPDF2.PdfReader(path)
+        policy_text = "\n".join(page.extract_text() for page in reader.pages if page.extract_text())
+
+        question = st.text_input("What would you like to know?")
+        if st.button("Ask AI"):
+            if question.strip():
+                with st.spinner("Thinking..."):
+                    answer = ask_ai(f"Policy: {selected_policy}\nContent:\n{policy_text[:4000]}\nQuestion:\n{question}")
+                    st.markdown(f"**Answer:** {answer}")
+                    save_query(selected_policy, question, answer)
+            else:
+                st.warning("Please enter a question.")
+
+# --- TAB 4: My Analytics ---
+elif page == "📊 My Analytics":
+    st.title("📊 My Policy Insights")
+    kpi_cards()
     df = load_queries()
-    if not df.empty:
-        st.write(f"Total Queries: {len(df)}")
 
-        # --- Hot Questions Detection ---
+    if not df.empty:
         question_counts = df["question"].value_counts().reset_index()
-        question_counts.columns = ["question", "count"]
+        question_counts.columns = ["Question", "Count"]
 
-        if not question_counts.empty:
-            st.subheader("🔥 Hot & Frequently Asked Questions")
-            st.table(question_counts.head(5))
-
-            fig = px.bar(question_counts.head(10), x="question", y="count",
-                         title="Top 10 Most Asked Questions", text_auto=True)
-            st.plotly_chart(fig, use_container_width=True)
-
-        st.subheader("🕓 Recent Questions")
-        st.dataframe(df.sort_values("timestamp", ascending=False).head(10))
+        fig = px.bar(question_counts.head(10), x="Question", y="Count", title="🔥 Most Common Questions")
+        st.plotly_chart(fig, use_container_width=True)
     else:
-        st.info("No queries found yet. Ask something in the Chat tab first!")
+        st.info("You haven't asked any questions yet.")
 
-# --- TAB 3: Policy Summary ---
-elif page == "🔥 Policy Summary":
-    st.title("🔥 AI Policy Summary")
-    st.write("Upload your policy and get a short summary to understand it better.")
-
-    upload_summary = st.file_uploader("📄 Upload Policy (PDF or TXT)", type=["pdf", "txt"], key="summary_upload")
-    if upload_summary:
-        if upload_summary.type == "application/pdf":
-            reader = PyPDF2.PdfReader(upload_summary)
-            policy_text = "\n".join(page.extract_text() for page in reader.pages if page.extract_text())
-        else:
-            policy_text = upload_summary.read().decode("utf-8")
-
-        with st.spinner("Summarizing your document..."):
-            summary = ask_ai(f"Summarize the following company policy in 5 bullet points:\n{policy_text[:4000]}")
-        st.markdown("### 🧾 Summary:")
-        st.write(summary)
-
-# --- TAB 4: Insights & Recommendations ---
-elif page == "💡 Insights & Recommendations":
-    st.title("💡 HR Insights & Recommendations")
+# --- TAB 5: My FAQs ---
+elif page == "❓ My FAQs":
+    st.title("❓ Frequently Asked Questions")
     df = load_queries()
-
     if not df.empty:
-        with st.spinner("Generating insights from employee queries..."):
-            combined_queries = "\n".join(df['question'].tolist())
-            insights = ask_ai(
-                f"Based on these employee questions about HR policies:\n{combined_queries}\n\n"
-                f"Provide insights and actionable recommendations for management to improve clarity or communication."
-            )
-        st.markdown("### 📈 AI-Generated Insights:")
-        st.write(insights)
+        st.write("Based on what employees often ask:")
+        questions = "\n".join(df["question"].tolist())
+        with st.spinner("Generating FAQs..."):
+            faqs = ask_ai(f"From these employee questions, generate 5 clear FAQ Q&A pairs:\n{questions}")
+        st.markdown(f"### FAQs:\n{faqs}")
     else:
-        st.info("No queries yet — ask questions in the Chat tab to generate insights!")
+        st.info("No questions asked yet — start in the Ask tab.")
 
-# --- TAB 5: Contacts ---
-elif page == "📞 Contacts":
-    st.title("📞 Department Contacts")
-    st.write("Reach out to departments for further clarifications.")
-
-    contact_data = {
-        "Department": ["HR", "Finance", "Legal", "IT Support", "Admin"],
-        "Email": [
-            "hr@company.in",
-            "finance@company.in",
-            "legal@company.in",
-            "itsupport@company.in",
-            "admin@company.in"
-        ],
-        "Phone": ["+91 9876543210", "+91 9823456789", "+91 9812345678", "+91 9800011223", "+91 9700044455"]
-    }
-
-    st.table(pd.DataFrame(contact_data))
-    st.success("For urgent policy-related issues, contact the HR department.")
+# --- TAB 6: Settings / UI Enhancements ---
+elif page == "🎨 Settings":
+    st.title("🎨 UI & Dashboard Settings")
+    st.write("Toggle theme or personalize your dashboard.")
+    dark_mode = st.toggle("🌙 Dark Mode", value=False)
+    if dark_mode:
+        st.success("Dark Mode activated!")
+    else:
+        st.info("Light Mode active.")
+    st.caption("More personalization options coming soon ✨")
