@@ -2,16 +2,21 @@ import streamlit as st
 import pandas as pd
 import os
 import base64
-import PyPDF2
 from datetime import datetime
 from dotenv import load_dotenv
 from groq import Groq
+from pypdf import PdfReader
+from pypdf.errors import PdfReadError
+from wordcloud import WordCloud
+import matplotlib.pyplot as plt
 
 # ---------- SETUP ----------
 load_dotenv()
 client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+
 POLICY_DIR = "policies"
 os.makedirs(POLICY_DIR, exist_ok=True)
+
 QUERY_FILE = "queries.csv"
 if not os.path.exists(QUERY_FILE):
     pd.DataFrame(columns=["timestamp", "context", "question", "answer"]).to_csv(QUERY_FILE, index=False)
@@ -19,26 +24,46 @@ if not os.path.exists(QUERY_FILE):
 # ---------- PAGE CONFIG ----------
 st.set_page_config(page_title="Policy Insights Dashboard", page_icon="💼", layout="wide")
 
-# ---------- THEME / STYLING ----------
+# ---------- HEADER / STYLING ----------
 st.markdown("""
 <style>
-body {
-    background: linear-gradient(135deg, #eef2f3 0%, #8e9eab 100%);
+[data-testid="stSidebar"] {
+    background: linear-gradient(180deg, #23395d, #406080);
+    color: white;
 }
 .chat-bubble-user {
-    background-color: #2E8B57; color: white; padding: 10px; border-radius: 10px; margin: 5px 0;
+    background-color: #004080;
+    color: white;
+    padding: 12px;
+    border-radius: 10px;
+    margin: 8px 0;
 }
 .chat-bubble-bot {
-    background-color: #f0f2f6; color: black; padding: 10px; border-radius: 10px; margin: 5px 0;
-    border-left: 4px solid #6C63FF;
+    background-color: #f8f9fa;
+    color: black;
+    padding: 12px;
+    border-radius: 10px;
+    border-left: 4px solid #004080;
+    margin: 8px 0;
 }
 .card {
-    background: white; padding: 25px; border-radius: 15px;
-    box-shadow: 0px 2px 10px rgba(0,0,0,0.1);
-    margin-bottom: 20px;
+    background: white;
+    padding: 20px;
+    border-radius: 15px;
+    box-shadow: 0px 4px 10px rgba(0,0,0,0.08);
+    margin-bottom: 15px;
+}
+.header {
+    background: linear-gradient(90deg, #004080, #0077b6);
+    padding: 15px;
+    border-radius: 10px;
+    color: white;
+    text-align: center;
 }
 </style>
 """, unsafe_allow_html=True)
+
+st.markdown("<div class='header'><h2>🏢 Policy Insights AI Dashboard</h2><p>Empowering Employees to Understand Company Policies</p></div>", unsafe_allow_html=True)
 
 # ---------- HELPER FUNCTIONS ----------
 def ask_ai(prompt):
@@ -46,7 +71,7 @@ def ask_ai(prompt):
         response = client.chat.completions.create(
             model="llama-3.1-8b-instant",
             messages=[
-                {"role": "system", "content": "You are a professional HR policy assistant that helps employees clearly understand company policies."},
+                {"role": "system", "content": "You are a professional HR policy assistant who explains company policies clearly and politely."},
                 {"role": "user", "content": prompt}
             ],
             temperature=0.3,
@@ -61,67 +86,85 @@ def save_query(context, question, answer):
     df = pd.concat([df, new_row], ignore_index=True)
     df.to_csv(QUERY_FILE, index=False)
 
-# ---------- SIDEBAR ----------
-st.sidebar.title("💼 Policy Insights Dashboard")
-st.sidebar.caption("Your company policy companion")
-page = st.sidebar.radio("Navigate:", ["📚 All Policies", "📤 Upload or Choose & Ask", "💬 Ask Policy AI", "📊 My Analytics", "❓ My FAQs", "⚙️ Settings"])
+def show_policy_card(file_path):
+    file_name = os.path.basename(file_path)
+    with open(file_path, "rb") as f:
+        b64 = base64.b64encode(f.read()).decode()
+        download_link = f"<a href='data:application/octet-stream;base64,{b64}' download='{file_name}'>📥 Download</a>"
+    st.markdown(f"<div class='card'><b>📄 {file_name.replace('_', ' ').title()}</b><br>{download_link}</div>", unsafe_allow_html=True)
 
-# ---------- TABS ----------
+# ---------- SIDEBAR ----------
+st.sidebar.title("🧭 Navigation")
+page = st.sidebar.radio("", ["📚 All Policies", "📤 Upload or Choose & Ask", "💬 Ask Policy AI", "📊 My Analytics", "❓ My FAQs"])
+st.sidebar.markdown("---")
+st.sidebar.info("💡 Tip: Upload a PDF temporarily or pick one from the library to ask questions.")
+
+# ---------- MAIN CONTENT ----------
+
+# ---- TAB 1: All Policies ----
 if page == "📚 All Policies":
     st.title("📚 Company Policy Library")
-    st.markdown("Browse or download official company policies.")
+    st.markdown("Browse and download all available company policies from below:")
 
-    files = [f for f in os.listdir(POLICY_DIR) if f.endswith(".pdf")]
-    if not files:
-        st.info("No policies available yet. Please upload via 'Upload or Choose & Ask'.")
+    company_policies = [os.path.join(POLICY_DIR, f) for f in os.listdir(POLICY_DIR) if f.endswith(".pdf")]
+    if not company_policies:
+        st.info("No policies found in the 'policies/' folder.")
     else:
-        for file in files:
-            path = os.path.join(POLICY_DIR, file)
-            with open(path, "rb") as f:
-                b64 = base64.b64encode(f.read()).decode()
-                st.markdown(f"<div class='card'><b>📄 {file.replace('_',' ').title()}</b><br>"
-                            f"<a href='data:application/octet-stream;base64,{b64}' download='{file}'>📥 Download</a></div>",
-                            unsafe_allow_html=True)
+        selected_policy = st.selectbox("Select a Policy", [os.path.basename(f) for f in company_policies])
+        show_policy_card(os.path.join(POLICY_DIR, selected_policy))
 
+# ---- TAB 2: Upload or Choose & Ask ----
 elif page == "📤 Upload or Choose & Ask":
-    st.title("📤 Upload or Choose Policy")
-    st.markdown("Upload a new policy PDF or pick one from existing ones, then chat with the AI assistant about that document.")
+    st.title("📤 Upload or Choose a Policy to Chat About")
 
     col1, col2 = st.columns(2)
+
     with col1:
-        uploaded = st.file_uploader("Upload Policy PDF", type=["pdf"])
-        if uploaded:
-            save_path = os.path.join(POLICY_DIR, uploaded.name)
-            with open(save_path, "wb") as f:
-                f.write(uploaded.getbuffer())
-            st.success(f"✅ Uploaded '{uploaded.name}'")
+        uploaded = st.file_uploader("Upload a Policy PDF (temporary, not saved)", type=["pdf"])
 
     with col2:
-        files = [f for f in os.listdir(POLICY_DIR) if f.endswith(".pdf")]
-        selected = st.selectbox("Or Choose Existing Policy", files if files else ["No files yet"])
+        company_files = [f for f in os.listdir(POLICY_DIR) if f.endswith(".pdf")]
+        selected = st.selectbox("Or Choose from Existing Policies", company_files if company_files else ["No company files yet"])
 
-    chosen_file = uploaded.name if uploaded else (selected if selected != "No files yet" else None)
-    if chosen_file:
-        with open(os.path.join(POLICY_DIR, chosen_file), "rb") as f:
-            reader = PyPDF2.PdfReader(f)
-            text = "\n".join(p.extract_text() for p in reader.pages if p.extract_text())
+    chosen_file = uploaded if uploaded else (selected if selected != "No company files yet" else None)
+    file_content = None
 
-        st.markdown("### 💬 Chat with AI about this Policy")
-        user_q = st.text_input("Ask something about this policy:")
-        if st.button("Ask AI"):
-            if user_q.strip():
-                with st.spinner("Reading policy and generating answer..."):
-                    answer = ask_ai(f"Policy: {chosen_file}\n\nContent:\n{text[:5000]}\n\nQuestion:\n{user_q}")
-                    st.markdown(f"<div class='chat-bubble-user'><b>You:</b> {user_q}</div>", unsafe_allow_html=True)
-                    st.markdown(f"<div class='chat-bubble-bot'><b>AI:</b> {answer}</div>", unsafe_allow_html=True)
-                    save_query(chosen_file, user_q, answer)
-            else:
-                st.warning("Please enter a question.")
+    if uploaded:
+        try:
+            reader = PdfReader(uploaded, strict=False)
+            file_content = "\n".join(p.extract_text() for p in reader.pages if p.extract_text())
+        except PdfReadError:
+            st.error("⚠️ Could not read the uploaded file. Please upload a valid PDF.")
+    elif selected and selected != "No company files yet":
+        with open(os.path.join(POLICY_DIR, selected), "rb") as f:
+            reader = PdfReader(f, strict=False)
+            file_content = "\n".join(p.extract_text() for p in reader.pages if p.extract_text())
 
+    if file_content:
+        st.markdown("### 💬 Chat About This Policy")
+        user_q = st.text_input("Ask a question about this policy:")
+        colA, colB = st.columns(2)
+        with colA:
+            ask_button = st.button("Ask AI")
+        with colB:
+            summary_button = st.button("📝 Summarize Policy")
+
+        if ask_button and user_q.strip():
+            with st.spinner("Analyzing and generating answer..."):
+                answer = ask_ai(f"Policy Content:\n{file_content[:6000]}\n\nQuestion: {user_q}")
+                st.markdown(f"<div class='chat-bubble-user'><b>You:</b> {user_q}</div>", unsafe_allow_html=True)
+                st.markdown(f"<div class='chat-bubble-bot'><b>AI:</b> {answer}</div>", unsafe_allow_html=True)
+                save_query(uploaded.name if uploaded else selected, user_q, answer)
+
+        elif summary_button:
+            with st.spinner("Summarizing policy..."):
+                summary = ask_ai(f"Summarize this policy in 5 bullet points:\n{file_content[:6000]}")
+                st.markdown(f"<div class='chat-bubble-bot'><b>Summary:</b><br>{summary}</div>", unsafe_allow_html=True)
+
+# ---- TAB 3: Ask Policy AI ----
 elif page == "💬 Ask Policy AI":
-    st.title("💬 Ask Policy AI (General Assistant)")
-    st.markdown("Ask anything about company policies or HR practices — the AI will respond based on general guidelines.")
-    question = st.text_area("Type your question:")
+    st.title("💬 General Policy AI Assistant")
+    question = st.text_area("Ask any question about company policies or HR practices:")
     if st.button("Ask"):
         if question.strip():
             with st.spinner("Thinking..."):
@@ -132,6 +175,7 @@ elif page == "💬 Ask Policy AI":
         else:
             st.warning("Please enter a question.")
 
+# ---- TAB 4: Analytics ----
 elif page == "📊 My Analytics":
     st.title("📊 My Analytics")
     df = pd.read_csv(QUERY_FILE)
@@ -140,25 +184,25 @@ elif page == "📊 My Analytics":
     else:
         st.metric("Total Questions", len(df))
         st.metric("Unique Policies", df['context'].nunique())
+
+        # Word cloud for top topics
+        text_data = " ".join(df["question"].tolist())
+        wordcloud = WordCloud(width=800, height=400, background_color="white").generate(text_data)
+        fig, ax = plt.subplots()
+        ax.imshow(wordcloud, interpolation="bilinear")
+        ax.axis("off")
+        st.pyplot(fig)
+
         st.dataframe(df.sort_values("timestamp", ascending=False).head(10))
 
+# ---- TAB 5: FAQs ----
 elif page == "❓ My FAQs":
     st.title("❓ Common Employee FAQs")
     df = pd.read_csv(QUERY_FILE)
     if df.empty:
-        st.info("No data yet — start asking questions!")
+        st.info("No questions yet — start asking in the other tabs.")
     else:
         questions = "\n".join(df["question"].tolist())
         with st.spinner("Generating FAQs..."):
-            faqs = ask_ai(f"From these employee questions, create a list of 5 common Q&A FAQs:\n{questions}")
+            faqs = ask_ai(f"From these employee questions, create 5 helpful FAQ-style Q&A pairs:\n{questions}")
         st.markdown(f"<div class='card'>{faqs}</div>", unsafe_allow_html=True)
-
-elif page == "⚙️ Settings":
-    st.title("⚙️ Settings & Appearance")
-    st.write("Personalize your dashboard theme.")
-    theme = st.selectbox("Choose Theme", ["Light", "Dark", "Corporate Blue"])
-    if theme == "Dark":
-        st.markdown("<style>body { background-color: #121212; color: #f5f5f5; }</style>", unsafe_allow_html=True)
-    elif theme == "Corporate Blue":
-        st.markdown("<style>body { background-color: #e6ebff; }</style>", unsafe_allow_html=True)
-    st.success(f"Theme applied: {theme}")
