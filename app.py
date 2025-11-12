@@ -24,46 +24,77 @@ if not os.path.exists(QUERY_FILE):
 # ---------- PAGE CONFIG ----------
 st.set_page_config(page_title="Policy Insights Dashboard", page_icon="💼", layout="wide")
 
-# ---------- HEADER / STYLING ----------
+# ---------- PASTEL THEME STYLING ----------
 st.markdown("""
 <style>
+/* Sidebar */
 [data-testid="stSidebar"] {
-    background: linear-gradient(180deg, #23395d, #406080);
-    color: white;
+    background-color: #FFF8C6; /* Pastel yellow */
 }
+[data-testid="stSidebar"] * {
+    color: black !important;
+}
+
+/* Header */
+.header {
+    background: linear-gradient(90deg, #E6E6FA, #FFF8E1); /* Lavender to Cream */
+    padding: 15px;
+    border-radius: 10px;
+    color: black;
+    text-align: center;
+    margin-bottom: 20px;
+    border: 1px solid #e0e0e0;
+}
+
+/* Cards */
+.card {
+    background: #ffffff;
+    border: 1px solid #eaeaea;
+    padding: 20px;
+    border-radius: 12px;
+    box-shadow: 0px 3px 8px rgba(0,0,0,0.05);
+    margin-bottom: 15px;
+}
+
+/* Chat bubbles */
 .chat-bubble-user {
-    background-color: #004080;
-    color: white;
+    background-color: #E8DAEF; /* pastel purple */
+    color: #000000;
     padding: 12px;
     border-radius: 10px;
     margin: 8px 0;
 }
 .chat-bubble-bot {
-    background-color: #f8f9fa;
-    color: black;
+    background-color: #F3E5F5; /* lavender light */
+    color: #000000;
     padding: 12px;
     border-radius: 10px;
-    border-left: 4px solid #004080;
+    border-left: 4px solid #C39BD3;
     margin: 8px 0;
 }
-.card {
-    background: white;
-    padding: 20px;
-    border-radius: 15px;
-    box-shadow: 0px 4px 10px rgba(0,0,0,0.08);
-    margin-bottom: 15px;
+
+/* Buttons */
+button[kind="primary"] {
+    background-color: #D8BFD8 !important; /* pastel violet */
+    color: black !important;
+    border: none !important;
 }
-.header {
-    background: linear-gradient(90deg, #004080, #0077b6);
-    padding: 15px;
-    border-radius: 10px;
-    color: white;
-    text-align: center;
+
+/* Body */
+body, [data-testid="stAppViewContainer"], [data-testid="stVerticalBlock"] {
+    background-color: #FAFAFA;
+    color: #000000;
+}
+
+/* Titles */
+h1, h2, h3, h4 {
+    color: #3D3D3D;
 }
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown("<div class='header'><h2>🏢 Policy Insights AI Dashboard</h2><p>Empowering Employees to Understand Company Policies</p></div>", unsafe_allow_html=True)
+# Header
+st.markdown("<div class='header'><h2>💼 Policy Insights Dashboard</h2><p>Understand Company Policies with AI Assistance</p></div>", unsafe_allow_html=True)
 
 # ---------- HELPER FUNCTIONS ----------
 def ask_ai(prompt):
@@ -71,7 +102,7 @@ def ask_ai(prompt):
         response = client.chat.completions.create(
             model="llama-3.1-8b-instant",
             messages=[
-                {"role": "system", "content": "You are a professional HR policy assistant who explains company policies clearly and politely."},
+                {"role": "system", "content": "You are a friendly and professional HR assistant explaining company policies clearly."},
                 {"role": "user", "content": prompt}
             ],
             temperature=0.3,
@@ -90,21 +121,21 @@ def show_policy_card(file_path):
     file_name = os.path.basename(file_path)
     with open(file_path, "rb") as f:
         b64 = base64.b64encode(f.read()).decode()
-        download_link = f"<a href='data:application/octet-stream;base64,{b64}' download='{file_name}'>📥 Download</a>"
+        download_link = f"<a href='data:application/octet-stream;base64,{b64}' download='{file_name}' style='color:#5D3FD3;'>📥 Download</a>"
     st.markdown(f"<div class='card'><b>📄 {file_name.replace('_', ' ').title()}</b><br>{download_link}</div>", unsafe_allow_html=True)
 
 # ---------- SIDEBAR ----------
 st.sidebar.title("🧭 Navigation")
 page = st.sidebar.radio("", ["📚 All Policies", "📤 Upload or Choose & Ask", "💬 Ask Policy AI", "📊 My Analytics", "❓ My FAQs"])
 st.sidebar.markdown("---")
-st.sidebar.info("💡 Tip: Upload a PDF temporarily or pick one from the library to ask questions.")
+st.sidebar.caption("🌸 Soft Pastel Edition")
 
 # ---------- MAIN CONTENT ----------
 
 # ---- TAB 1: All Policies ----
 if page == "📚 All Policies":
     st.title("📚 Company Policy Library")
-    st.markdown("Browse and download all available company policies from below:")
+    st.markdown("Browse and download available company policies:")
 
     company_policies = [os.path.join(POLICY_DIR, f) for f in os.listdir(POLICY_DIR) if f.endswith(".pdf")]
     if not company_policies:
@@ -118,15 +149,13 @@ elif page == "📤 Upload or Choose & Ask":
     st.title("📤 Upload or Choose a Policy to Chat About")
 
     col1, col2 = st.columns(2)
-
     with col1:
         uploaded = st.file_uploader("Upload a Policy PDF (temporary, not saved)", type=["pdf"])
-
     with col2:
         company_files = [f for f in os.listdir(POLICY_DIR) if f.endswith(".pdf")]
-        selected = st.selectbox("Or Choose from Existing Policies", company_files if company_files else ["No company files yet"])
+        selected = st.selectbox("Or Choose from Existing Policies", company_files if company_files else ["No policies yet"])
 
-    chosen_file = uploaded if uploaded else (selected if selected != "No company files yet" else None)
+    chosen_file = uploaded if uploaded else (selected if selected != "No policies yet" else None)
     file_content = None
 
     if uploaded:
@@ -134,8 +163,8 @@ elif page == "📤 Upload or Choose & Ask":
             reader = PdfReader(uploaded, strict=False)
             file_content = "\n".join(p.extract_text() for p in reader.pages if p.extract_text())
         except PdfReadError:
-            st.error("⚠️ Could not read the uploaded file. Please upload a valid PDF.")
-    elif selected and selected != "No company files yet":
+            st.error("⚠️ Could not read uploaded file. Please upload a valid PDF.")
+    elif selected and selected != "No policies yet":
         with open(os.path.join(POLICY_DIR, selected), "rb") as f:
             reader = PdfReader(f, strict=False)
             file_content = "\n".join(p.extract_text() for p in reader.pages if p.extract_text())
@@ -150,7 +179,7 @@ elif page == "📤 Upload or Choose & Ask":
             summary_button = st.button("📝 Summarize Policy")
 
         if ask_button and user_q.strip():
-            with st.spinner("Analyzing and generating answer..."):
+            with st.spinner("Analyzing..."):
                 answer = ask_ai(f"Policy Content:\n{file_content[:6000]}\n\nQuestion: {user_q}")
                 st.markdown(f"<div class='chat-bubble-user'><b>You:</b> {user_q}</div>", unsafe_allow_html=True)
                 st.markdown(f"<div class='chat-bubble-bot'><b>AI:</b> {answer}</div>", unsafe_allow_html=True)
@@ -164,7 +193,7 @@ elif page == "📤 Upload or Choose & Ask":
 # ---- TAB 3: Ask Policy AI ----
 elif page == "💬 Ask Policy AI":
     st.title("💬 General Policy AI Assistant")
-    question = st.text_area("Ask any question about company policies or HR practices:")
+    question = st.text_area("Ask any question about company policies:")
     if st.button("Ask"):
         if question.strip():
             with st.spinner("Thinking..."):
@@ -185,9 +214,8 @@ elif page == "📊 My Analytics":
         st.metric("Total Questions", len(df))
         st.metric("Unique Policies", df['context'].nunique())
 
-        # Word cloud for top topics
         text_data = " ".join(df["question"].tolist())
-        wordcloud = WordCloud(width=800, height=400, background_color="white").generate(text_data)
+        wordcloud = WordCloud(width=800, height=400, background_color="white", colormap="Purples").generate(text_data)
         fig, ax = plt.subplots()
         ax.imshow(wordcloud, interpolation="bilinear")
         ax.axis("off")
