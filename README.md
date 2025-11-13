@@ -3,7 +3,7 @@
 ## Escobar Consultancy - Policy Insights AI Dashboard 
 
 An AI-powered internal policy portal designed for employees to easily access, understand, and navigate company policies.  
-Built using **Streamlit**, **Groq Llama 3.1 (free model)**, and **custom pastel UI**, this dashboard provides:
+Built using **Streamlit**, **Groq Llama 3.1 (free model)**, this dashboard provides:
 
 - 📚 A central policy library  
 - 🤖 AI-based policy Q&A  
@@ -19,7 +19,6 @@ This project is created for academic and demonstration purposes using the fictio
 ## 🚀 Features
 
 ### **1. Home Dashboard**
-- Clean pastel UI with company branding  
 - Overview of all features  
 - Easy navigation  
 
