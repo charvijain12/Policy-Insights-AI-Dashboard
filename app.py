@@ -22,32 +22,25 @@ if not os.path.exists(QUERY_FILE):
     pd.DataFrame(columns=["timestamp", "context", "question", "answer"]).to_csv(QUERY_FILE, index=False)
 
 # ---------- PAGE CONFIG ----------
-st.set_page_config(page_title="Avelora Consulting - Policy Insights", page_icon="💼", layout="wide")
+st.set_page_config(page_title="Escobar Consultancy - Policy Insights", page_icon="💼", layout="wide")
 
-# ---------- CSS (PASTEL + CUSTOM SIDEBAR + NO WHITE BOXES) ----------
+# ---------- CSS ----------
 st.markdown("""
 <style>
 
-/* Remove white background from sidebar content */
 [data-testid="stSidebarContent"] {
     background: linear-gradient(180deg, #E6E6FA, #FFF8E1) !important;
     padding-top: 25px !important;
     border-right: 1px solid #e0e0e0;
 }
 
-/* Remove default Streamlit radio style */
 section[data-testid="stSidebar"] div[role="radiogroup"] {
     background: transparent !important;
     border: none !important;
 }
-section[data-testid="stSidebar"] input[type="radio"] {
-    display: none !important;
-}
-section[data-testid="stSidebar"] label {
-    background: transparent !important;
-}
+section[data-testid="stSidebar"] input[type="radio"] { display: none !important; }
+section[data-testid="stSidebar"] label { background: transparent !important; }
 
-/* Custom Menu Item */
 .menu-item {
     padding: 10px 16px;
     border-radius: 10px;
@@ -67,11 +60,11 @@ section[data-testid="stSidebar"] label {
 }
 .menu-active {
     background: white !important;
-    border-left: 4px solid #C39BD3;
+    border-left: 4px solid #C39BD3 !important;
     font-weight: 600 !important;
 }
 
-/* Header */
+/******** HEADER ********/
 .header {
     background: linear-gradient(90deg, #E6E6FA, #FFF8E1);
     padding: 20px;
@@ -82,7 +75,7 @@ section[data-testid="stSidebar"] label {
     margin-bottom: 30px;
 }
 
-/* Cards */
+/******** CARDS ********/
 .card {
     background: white;
     border: 1px solid #e8e8e8;
@@ -92,7 +85,7 @@ section[data-testid="stSidebar"] label {
     margin-bottom: 20px;
 }
 
-/* Chat bubbles */
+/******** CHAT ********/
 .chat-bubble-user {
     background-color: #E8DAEF;
     padding: 12px;
@@ -107,7 +100,7 @@ section[data-testid="stSidebar"] label {
     margin: 10px 0;
 }
 
-/* Buttons */
+/******** BUTTONS ********/
 div.stButton > button {
     background: linear-gradient(90deg, #F3E5F5, #E6E6FA);
     border: 1px solid #C39BD3;
@@ -120,7 +113,6 @@ div.stButton > button:hover {
     background: linear-gradient(90deg, #E6E6FA, #F3E5F5);
 }
 
-/* Body */
 body, [data-testid="stAppViewContainer"] {
     background-color: #FAFAFA;
     font-family: "Segoe UI", sans-serif;
@@ -129,83 +121,110 @@ body, [data-testid="stAppViewContainer"] {
 </style>
 """, unsafe_allow_html=True)
 
-# ---------- HEADER ----------
-st.markdown("""
-<div class='header'>
-    <h1>💼 Avelora Consulting — Policy Insights Dashboard</h1>
-    <p>Helping employees understand company policies with ease.</p>
-</div>
-""", unsafe_allow_html=True)
+# ---------- HEADER (only for Home page) ----------
+def show_header():
+    st.markdown("""
+    <div class='header'>
+        <h1>💼 Escobar Consultancy — Policy Insights Dashboard</h1>
+        <p>Your AI-powered company policy assistant.</p>
+    </div>
+    """, unsafe_allow_html=True)
 
-# ---------- HELPER FUNCTIONS ----------
+# ---------- HELPERS ----------
 def ask_ai(prompt):
     try:
-        response = client.chat.completions.create(
+        res = client.chat.completions.create(
             model="llama-3.1-8b-instant",
             messages=[
-                {"role": "system", "content": "You are a friendly HR assistant who explains policies clearly."},
-                {"role": "user", "content": prompt}
+                {"role":"system","content":"You are a friendly HR assistant."},
+                {"role":"user","content":prompt}
             ],
             temperature=0.2,
         )
-        return response.choices[0].message.content.strip()
+        return res.choices[0].message.content.strip()
     except Exception as e:
         return f"⚠️ Error: {e}"
 
-def save_query(context, question, answer):
+def save_query(context, q, a):
     df = pd.read_csv(QUERY_FILE)
-    new_row = pd.DataFrame([[datetime.now(), context, question, answer]],
-                           columns=["timestamp","context","question","answer"])
-    df = pd.concat([df,new_row], ignore_index=True)
-    df.to_csv(QUERY_FILE, index=False)
+    new = pd.DataFrame([[datetime.now(), context, q, a]],columns=["timestamp","context","question","answer"])
+    df = pd.concat([df,new], ignore_index=True)
+    df.to_csv(QUERY_FILE,index=False)
 
-def show_policy_card(file_path):
-    file_name = os.path.basename(file_path)
-    with open(file_path, "rb") as f:
+def category_of(question):
+    q = question.lower()
+    if any(x in q for x in ["leave","holiday","vacation"]): return "Leave & Attendance"
+    if any(x in q for x in ["salary","pay","compensation"]): return "Payroll & Compensation"
+    if any(x in q for x in ["policy","rules"]): return "Policy Clarification"
+    if any(x in q for x in ["approval","form","hr"]): return "HR Processes"
+    return "General"
+
+def show_policy_card(path):
+    name = os.path.basename(path)
+    with open(path, "rb") as f:
         b64 = base64.b64encode(f.read()).decode()
-        dl = f"<a href='data:application/octet-stream;base64,{b64}' download='{file_name}' style='color:#7D3C98;'>📥 Download</a>"
-    st.markdown(f"<div class='card'><b>📄 {file_name}</b><br>{dl}</div>", unsafe_allow_html=True)
+    st.markdown(
+        f"<div class='card'><b>📄 {name}</b><br>"
+        f"<a style='color:#6C35A3;' href='data:application/octet-stream;base64,{b64}' download='{name}'>📥 Download</a></div>",
+        unsafe_allow_html=True
+    )
 
-# ---------- CUSTOM SIDEBAR NAVIGATION ----------
+# ---------- SIDEBAR NAV ----------
 st.sidebar.markdown("### 🧭 Navigation")
 
-page_list = ["Home", "All Policies", "Upload or Choose & Ask", "Ask Policy AI", "My Analytics", "My FAQs"]
+page = st.sidebar.radio(
+    "",
+    [
+        "Home",
+        "All Policies",
+        "Upload or Choose & Ask",
+        "Ask Policy AI",
+        "My Analytics",
+        "My FAQs",
+        "Contact & Support"
+    ],
+    label_visibility="collapsed"
+)
 
-page = st.sidebar.radio("", page_list, label_visibility="collapsed")
-
-# ---------- HOME PAGE ----------
+# ===========================================
+#                HOME PAGE
+# ===========================================
 if page == "Home":
-    st.title("🏠 Welcome to Avelora Consulting's Policy Portal")
-    
+    show_header()
+    st.title("🏠 Welcome to Escobar Consultancy’s Policy Portal")
+
     st.markdown("""
     <div class='card'>
         <h3>About This Dashboard</h3>
         <p>
-        This platform helps employees of <b>Avelora Consulting</b> easily access, understand, 
-        and navigate company policies using AI-powered assistance.
+        This platform helps employees easily access, understand, and navigate company policies using AI-powered support.
         </p>
 
-        <ul>
+        <ul style="margin-left:20px;">
             <li>Browse official company policies</li>
             <li>Upload a policy temporarily and ask questions</li>
             <li>Use the AI assistant for HR and policy queries</li>
-            <li>View your personal analytics and FAQs</li>
+            <li>View your personal insights and FAQs</li>
         </ul>
     </div>
     """, unsafe_allow_html=True)
 
-# ---------- ALL POLICIES ----------
+# ===========================================
+#                ALL POLICIES
+# ===========================================
 elif page == "All Policies":
     st.title("📚 All Company Policies")
     files = [f for f in os.listdir(POLICY_DIR) if f.endswith(".pdf")]
 
     if not files:
-        st.info("No policies found. Add PDFs into the 'policies/' folder.")
+        st.info("No policy files found.")
     else:
         selected = st.selectbox("Select a policy:", files)
         show_policy_card(os.path.join(POLICY_DIR, selected))
 
-# ---------- UPLOAD OR CHOOSE ----------
+# ===========================================
+#             UPLOAD OR CHOOSE
+# ===========================================
 elif page == "Upload or Choose & Ask":
     st.title("📤 Upload or Choose a Policy")
 
@@ -216,78 +235,142 @@ elif page == "Upload or Choose & Ask":
         files = [f for f in os.listdir(POLICY_DIR) if f.endswith(".pdf")]
         selected = st.selectbox("Choose Existing Policy", files if files else ["None"])
 
-    chosen_file = uploaded if uploaded else (selected if selected != "None" else None)
-    content = None
+    chosen = uploaded if uploaded else (selected if selected!="None" else None)
 
-    if uploaded:
+    content = None
+    if chosen:
         try:
-            reader = PdfReader(uploaded, strict=False)
-            content = "\n".join(p.extract_text() for p in reader.pages if p.extract_text())
+            reader = PdfReader(chosen if uploaded else open(os.path.join(POLICY_DIR, selected),"rb"), strict=False)
+            content = "\n".join([p.extract_text() for p in reader.pages if p.extract_text()])
         except:
-            st.error("Could not read uploaded file.")
-    elif selected != "None":
-        with open(os.path.join(POLICY_DIR, selected), "rb") as f:
-            reader = PdfReader(f, strict=False)
-            content = "\n".join(p.extract_text() for p in reader.pages if p.extract_text())
+            st.error("Could not read policy file.")
 
     if content:
         st.markdown("## 💬 Ask Questions About This Policy")
-        user_q = st.text_input("Your question:")
-        c1, c2 = st.columns(2)
+        q = st.text_input("Your question:")
+        c1,c2 = st.columns(2)
         with c1: ask_btn = st.button("Ask AI")
         with c2: sum_btn = st.button("Summarize Policy")
 
         if ask_btn:
-            with st.spinner("Analyzing..."):
-                ans = ask_ai(f"Policy:\n{content[:6000]}\n\nEmployee Question: {user_q}")
-                st.markdown(f"<div class='chat-bubble-user'><b>You:</b> {user_q}</div>", unsafe_allow_html=True)
-                st.markdown(f"<div class='chat-bubble-bot'><b>AI:</b> {ans}</div>", unsafe_allow_html=True)
-                save_query(uploaded.name if uploaded else selected, user_q, ans)
-
-        if sum_btn:
-            with st.spinner("Summarizing..."):
-                sm = ask_ai(f"Summarize this policy in 5 bullet points:\n{content[:6000]}")
-                st.markdown(f"<div class='chat-bubble-bot'><b>Summary:</b><br>{sm}</div>", unsafe_allow_html=True)
-
-# ---------- ASK POLICY AI ----------
-elif page == "Ask Policy AI":
-    st.title("💬 General Policy Assistant")
-    q = st.text_area("Ask your HR or general policy question:")
-    if st.button("Ask"):
-        with st.spinner("Thinking..."):
-            ans = ask_ai(q)
+            ans = ask_ai(f"Policy:\n{content[:6000]}\n\nQuestion: {q}")
             st.markdown(f"<div class='chat-bubble-user'><b>You:</b> {q}</div>", unsafe_allow_html=True)
             st.markdown(f"<div class='chat-bubble-bot'><b>AI:</b> {ans}</div>", unsafe_allow_html=True)
-            save_query("General", q, ans)
+            save_query(selected if not uploaded else uploaded.name, q, ans)
 
-# ---------- ANALYTICS ----------
+        if sum_btn:
+            sm = ask_ai(f"Summarize this policy in 5 points:\n{content}")
+            st.markdown(f"<div class='chat-bubble-bot'><b>Summary:</b><br>{sm}</div>", unsafe_allow_html=True)
+
+# ===========================================
+#            ASK POLICY AI
+# ===========================================
+elif page == "Ask Policy AI":
+    st.title("💬 General Policy AI Assistant")
+    q = st.text_area("Ask your question:")
+    if st.button("Ask"):
+        ans = ask_ai(q)
+        st.markdown(f"<div class='chat-bubble-user'><b>You:</b> {q}</div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='chat-bubble-bot'><b>AI:</b> {ans}</div>", unsafe_allow_html=True)
+        save_query("General", q, ans)
+
+# ===========================================
+#               ANALYTICS
+# ===========================================
 elif page == "My Analytics":
-    st.title("📊 Your Analytics")
+    st.title("📊 Your Policy Insights")
     df = pd.read_csv(QUERY_FILE)
+
     if df.empty:
-        st.info("No questions asked yet.")
+        st.info("You haven’t asked any questions yet.")
     else:
-        st.metric("Total Questions", len(df))
-        st.metric("Unique Policies Accessed", df['context'].nunique())
+        col1,col2 = st.columns(2)
+        with col1: st.metric("Total Questions", len(df))
+        with col2: st.metric("Unique Policies", df["context"].nunique())
 
-        wc_text = " ".join(df["question"])
-        wc = WordCloud(width=600, height=300, background_color="white", colormap="Purples").generate(wc_text)
+        df["category"] = df["question"].apply(category_of)
+        st.markdown("### 📌 Question Categories")
+        st.bar_chart(df["category"].value_counts())
 
+        df["hour"] = pd.to_datetime(df["timestamp"]).dt.hour
+        st.markdown("### ⏰ When You Ask Questions")
+        st.line_chart(df["hour"].value_counts().sort_index())
+
+        st.markdown("### 🔥 Frequent Topics")
+        wc = WordCloud(width=800, height=300, background_color="white", colormap="Purples") \
+            .generate(" ".join(df["question"]))
         fig, ax = plt.subplots()
         ax.imshow(wc)
         ax.axis("off")
         st.pyplot(fig)
 
-        st.dataframe(df.sort_values("timestamp", ascending=False))
-
-# ---------- FAQ ----------
+# ===========================================
+#                    FAQ
+# ===========================================
 elif page == "My FAQs":
     st.title("❓ Frequently Asked Questions")
     df = pd.read_csv(QUERY_FILE)
     if df.empty:
         st.info("Ask some questions first!")
     else:
-        combined_questions = "\n".join(df["question"])
-        with st.spinner("Generating FAQs..."):
-            faqs = ask_ai(f"Generate 5 FAQ Q&A from this list:\n{combined_questions}")
+        bundle = "\n".join(df["question"])
+        faqs = ask_ai(f"Create 5 short FAQs from:\n{bundle}")
         st.markdown(f"<div class='card'>{faqs}</div>", unsafe_allow_html=True)
+
+# ===========================================
+#             CONTACT & SUPPORT
+# ===========================================
+elif page == "Contact & Support":
+    st.title("📞 Contact & Support – Escobar Consultancy")
+
+    st.markdown("""
+    <div class='card'>
+        <h3>We're here to help!</h3>
+        <p>If you need assistance regarding any policy or HR process, please reach out to the relevant department or regional POC below.</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown("## 🏢 Department-wise Contacts")
+
+    departments = {
+        "Human Resources (HR)": {"email": "hr@escobarconsultancy.in", "phone": "98234xxxxx"},
+        "Finance & Payroll": {"email": "finance@escobarconsultancy.in", "phone": "98188xxxxx"},
+        "IT Support": {"email": "itsupport@escobarconsultancy.in", "phone": "99777xxxxx"},
+        "Admin & Facilities": {"email": "admin@escobarconsultancy.in", "phone": "91234xxxxx"},
+        "Compliance & Legal": {"email": "compliance@escobarconsultancy.in", "phone": "99876xxxxx"},
+    }
+
+    for dept, info in departments.items():
+        st.markdown(
+            f"""
+            <div class='card'>
+                <h4>{dept}</h4>
+                📧 Email: <b>{info['email']}</b><br>
+                📞 Phone: <b>{info['phone']}</b>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+    st.markdown("## 🌍 Region-wise Points of Contact (POCs)")
+
+    regional_pocs = {
+        "Maharashtra": {"name": "Rahul Deshmukh", "phone": "99345xxxxx", "email": "rahul.d@escobarconsultancy.in"},
+        "Karnataka": {"name": "Sneha Ramesh", "phone": "99822xxxxx", "email": "sneha.r@escobarconsultancy.in"},
+        "Tamil Nadu": {"name": "Arun Prakash", "phone": "98455xxxxx", "email": "arun.p@escobarconsultancy.in"},
+        "Delhi NCR": {"name": "Priya Malhotra", "phone": "98760xxxxx", "email": "priya.m@escobarconsultancy.in"},
+        "Telangana": {"name": "Varun Reddy", "phone": "99001xxxxx", "email": "varun.r@escobarconsultancy.in"}
+    }
+
+    for region, info in regional_pocs.items():
+        st.markdown(
+            f"""
+            <div class='card'>
+                <h4>📍 {region}</h4>
+                <b>{info['name']}</b><br>
+                📞 {info['phone']}<br>
+                📧 {info['email']}
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
