@@ -1,6 +1,4 @@
-# Internal Project 1 for EY GDS AIML Training
-
-## Escobar Consultancy - Policy Insights AI Dashboard 
+# Escobar Consultancy - Policy Insights AI Dashboard 
 
 An AI-powered internal policy portal designed for employees to easily access, understand, and navigate company policies.  
 Built using **Streamlit**, **Groq Llama 3.1 (free model)**, this dashboard provides:
